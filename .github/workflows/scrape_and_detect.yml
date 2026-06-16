@@ -1,0 +1,30 @@
+name: Scrape and Detect Changes
+
+on:
+  schedule:
+    - cron: '0 9 * * *'  # Runs every day at 9am UTC
+  workflow_dispatch:       # Allows manual trigger from GitHub
+
+jobs:
+  run:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install dependencies
+        run: |
+          pip install playwright supabase python-dotenv
+          playwright install chromium --with-deps
+
+      - name: Run scraper and change detector
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_KEY: ${{ secrets.SUPABASE_KEY }}
+        run: python run_scrape_and_detect.py
