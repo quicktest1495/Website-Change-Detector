@@ -2,7 +2,7 @@ name: Scrape and Detect Changes
 
 on:
   schedule:
-    - cron: '0 9 * * *'  # Runs every day at 9am UTC
+    - cron: '0 16 * * *'  # Runs every day at 8am PST (4pm UTC)
   workflow_dispatch:       # Allows manual trigger from GitHub
 
 jobs:
