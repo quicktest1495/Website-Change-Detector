@@ -37,6 +37,20 @@ class NotificationScheduler:
         )
         return f"{result.data['label']} ({result.data['url']})"
 
+    def parse_diff(self, diff: str) -> tuple[list, list]:
+        """Extracts added and removed lines from a unified diff."""
+        added = []
+        removed = []
+        for line in diff.splitlines():
+            if line.startswith("+") and not line.startswith("+++"):
+                added.append(line[1:].strip())
+            elif line.startswith("-") and not line.startswith("---"):
+                removed.append(line[1:].strip())
+        # Filter out empty or tag-only lines
+        added = [l for l in added if l and not l.startswith("<")]
+        removed = [l for l in removed if l and not l.startswith("<")]
+        return added, removed
+
     def format_email(self, changes: list) -> str:
         """Builds a readable HTML email from the changes list."""
         if not changes:
@@ -55,12 +69,34 @@ class NotificationScheduler:
         for site_id, site_changes in by_site.items():
             label = self.get_site_label(site_id)
             html += f"<h3>{label}</h3>"
-            html += f"<p><strong>{len(site_changes)} change(s) detected</strong></p>"
+            html += f"<p><strong>{len(site_changes)} change(s) detected this week</strong></p>"
 
             for change in site_changes:
                 detected_at = change["detected_at"][:19].replace("T", " ")
-                html += f"<p><em>Detected at: {detected_at}</em></p>"
-                html += f"<pre style='background:#f4f4f4;padding:10px;font-size:12px;overflow:auto'>{change['diff'][:1000]}</pre>"
+                html += f"<p><em>Detected at: {detected_at} UTC</em></p>"
+
+                added, removed = self.parse_diff(change["diff"])
+
+                if added:
+                    html += "<p><strong>✅ Added to the page:</strong></p><ul>"
+                    for line in added[:10]:
+                        html += f"<li>{line}</li>"
+                    if len(added) > 10:
+                        html += f"<li>...and {len(added) - 10} more</li>"
+                    html += "</ul>"
+
+                if removed:
+                    html += "<p><strong>❌ Removed from the page:</strong></p><ul>"
+                    for line in removed[:10]:
+                        html += f"<li>{line}</li>"
+                    if len(removed) > 10:
+                        html += f"<li>...and {len(removed) - 10} more</li>"
+                    html += "</ul>"
+
+                if not added and not removed:
+                    html += "<p>Content structure changed but no visible text was added or removed.</p>"
+
+                html += "<hr>"
 
         return html
 
