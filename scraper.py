@@ -53,6 +53,22 @@ class WebScraper:
             "content_hash": content_hash,
         }).execute()
 
+    def cleanup_snapshots(self, site_id: int):
+        """Keeps only the 2 most recent snapshots for a site and deletes the rest."""
+        result = (
+            self.supabase.table("snapshots")
+            .select("id")
+            .eq("site_id", site_id)
+            .order("scraped_at", desc=True)
+            .execute()
+        )
+
+        snapshots = result.data
+        if len(snapshots) > 2:
+            ids_to_delete = [s["id"] for s in snapshots[2:]]
+            self.supabase.table("snapshots").delete().in_("id", ids_to_delete).execute()
+            print(f"  Deleted {len(ids_to_delete)} old snapshot(s)")
+
     async def run(self):
         sites = self.supabase.table("watched_sites").select("id, url").execute().data
 
@@ -62,4 +78,5 @@ class WebScraper:
                 continue
             raw_html, content_hash = result
             self.save_snapshot(site["id"], raw_html, content_hash)
+            self.cleanup_snapshots(site["id"])
             print(f"Saved snapshot for {site['url']}")
