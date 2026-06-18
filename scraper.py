@@ -11,8 +11,8 @@ class WebScraper:
             os.environ["SUPABASE_KEY"],
         )
 
-    async def scrape_url(self, url: str) -> tuple[str, str] | None:
-        """Returns (raw_html, content_hash) or None if the page should be skipped."""
+    async def scrape_url(self, url: str) -> tuple[str, str, str] | None:
+        """Returns (raw_html, visible_text, content_hash) or None if the page should be skipped."""
         async with async_playwright() as p:
             browser = await p.chromium.launch()
             try:
@@ -38,7 +38,7 @@ class WebScraper:
                     return None
 
                 content_hash = hashlib.sha256(visible_text.encode()).hexdigest()
-                return raw_html, content_hash
+                return raw_html, visible_text, content_hash
 
             except Exception as e:
                 print(f"Skipping {url}: {e}")
@@ -46,10 +46,11 @@ class WebScraper:
             finally:
                 await browser.close()
 
-    def save_snapshot(self, site_id: int, raw_html: str, content_hash: str):
+    def save_snapshot(self, site_id: int, raw_html: str, visible_text: str, content_hash: str):
         self.supabase.table("snapshots").insert({
             "site_id": site_id,
             "raw_content": raw_html,
+            "visible_text": visible_text,
             "content_hash": content_hash,
         }).execute()
 
@@ -76,7 +77,7 @@ class WebScraper:
             result = await self.scrape_url(site["url"])
             if result is None:
                 continue
-            raw_html, content_hash = result
-            self.save_snapshot(site["id"], raw_html, content_hash)
+            raw_html, visible_text, content_hash = result
+            self.save_snapshot(site["id"], raw_html, visible_text, content_hash)
             self.cleanup_snapshots(site["id"])
             print(f"Saved snapshot for {site['url']}")

@@ -14,7 +14,7 @@ class ChangeDetector:
         """Returns the two most recent snapshots for a site, or None if fewer than 2 exist."""
         result = (
             self.supabase.table("snapshots")
-            .select("id, content_hash, raw_content")
+            .select("id, content_hash, visible_text")
             .eq("site_id", site_id)
             .order("scraped_at", desc=True)
             .limit(2)
@@ -32,8 +32,8 @@ class ChangeDetector:
         if latest["content_hash"] == previous["content_hash"]:
             return None
 
-        latest_lines = latest["raw_content"].splitlines(keepends=True)
-        previous_lines = previous["raw_content"].splitlines(keepends=True)
+        latest_lines = latest["visible_text"].splitlines(keepends=True)
+        previous_lines = previous["visible_text"].splitlines(keepends=True)
 
         diff = difflib.unified_diff(
             previous_lines,
