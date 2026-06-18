@@ -1,7 +1,12 @@
 import hashlib
+import asyncio
 from playwright.async_api import async_playwright
 from supabase import create_client
 import os
+
+# Seconds to wait between the two looks at a site. The gap lets jittery content
+# (counters, cookie banners, animations) change so we can spot and drop it.
+SCRAPE_GAP_SECONDS = int(os.environ.get("SCRAPE_GAP_SECONDS", "60"))
 
 
 class WebScraper:
@@ -50,6 +55,15 @@ class WebScraper:
             finally:
                 await browser.close()
 
+    @staticmethod
+    def stable_text(text_a: str, text_b: str) -> str:
+        """Keeps only the lines that appear in BOTH looks at the page. Lines that
+        changed between the two scrapes (counters, cookie banners, animations) are
+        dropped as jitter; lines that stayed the same are the real content."""
+        a_lines = set(line.strip() for line in text_a.splitlines())
+        stable = [line for line in text_b.splitlines() if line.strip() in a_lines]
+        return "\n".join(stable)
+
     def save_snapshot(self, site_id: int, raw_html: str, visible_text: str, content_hash: str):
         self.supabase.table("snapshots").insert({
             "site_id": site_id,
@@ -78,10 +92,27 @@ class WebScraper:
         sites = self.supabase.table("watched_sites").select("id, url").execute().data
 
         for site in sites:
-            result = await self.scrape_url(site["url"])
-            if result is None:
+            url = site["url"]
+
+            # Look 1
+            look_a = await self.scrape_url(url)
+            if look_a is None:
                 continue
-            raw_html, visible_text, content_hash = result
+            print(f"  Looked at {url} (1/2), waiting {SCRAPE_GAP_SECONDS}s...")
+            await asyncio.sleep(SCRAPE_GAP_SECONDS)
+
+            # Look 2
+            look_b = await self.scrape_url(url)
+
+            if look_b is None:
+                # Second look failed — fall back to the single look, unfiltered
+                raw_html, visible_text, content_hash = look_a
+            else:
+                # Keep only the content that stayed the same across both looks
+                visible_text = self.stable_text(look_a[1], look_b[1])
+                raw_html = look_b[0]
+                content_hash = hashlib.sha256(visible_text.encode()).hexdigest()
+
             self.save_snapshot(site["id"], raw_html, visible_text, content_hash)
             self.cleanup_snapshots(site["id"])
-            print(f"Saved snapshot for {site['url']}")
+            print(f"Saved stable snapshot for {url}")
