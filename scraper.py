@@ -17,7 +17,11 @@ class WebScraper:
             browser = await p.chromium.launch()
             try:
                 page = await browser.new_page()
-                response = await page.goto(url, timeout=30000, wait_until="networkidle")
+                # "domcontentloaded" rather than "networkidle": sites that stream
+                # live data (e.g. GeekWire) never go idle and would time out.
+                response = await page.goto(url, timeout=30000, wait_until="domcontentloaded")
+                # Give client-side JS a moment to render before capturing
+                await page.wait_for_timeout(2000)
 
                 if response is None or not response.ok:
                     print(f"Skipping {url}: bad response")
