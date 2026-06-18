@@ -6,7 +6,7 @@ import os
 
 # Seconds to wait between the two looks at a site. The gap lets jittery content
 # (counters, cookie banners, animations) change so we can spot and drop it.
-SCRAPE_GAP_SECONDS = int(os.environ.get("SCRAPE_GAP_SECONDS", "60"))
+SCRAPE_GAP_SECONDS = int(os.environ.get("SCRAPE_GAP_SECONDS", "15"))
 
 
 class WebScraper:
