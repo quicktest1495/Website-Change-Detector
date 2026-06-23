@@ -16,19 +16,30 @@ class WebScraper:
             os.environ["SUPABASE_KEY"],
         )
 
-    async def dismiss_banners(self, page) -> None:
-        """Remove cookie banners and consent dialogs from the DOM before extracting text.
+    async def strip_noise(self, page) -> None:
+        """Remove structural and cookie noise from the DOM before extracting text.
 
-        Uses a recursive approach to handle both regular DOM elements and elements
-        inside shadow roots (e.g. OneTrust, CookieYes), which querySelectorAll
-        cannot reach on its own.
+        Strips two categories of elements:
+        1. Navigation/structural — nav, header, footer, aside. These vary between
+           scrapes depending on JS render state (active menu states, mobile nav,
+           skip links) and are rarely where meaningful startup content lives.
+        2. Cookie banners — handled recursively to reach shadow DOM elements
+           (e.g. OneTrust, CookieYes) that querySelectorAll cannot reach directly.
 
-        Silently ignores any selector or removal errors so a stubborn banner
+        Silently ignores any selector or removal errors so a stubborn element
         never blocks the rest of the scrape.
         """
         await page.evaluate("""
             () => {
-                const SELECTORS = [
+                // Structural noise — strip before reading text
+                const STRUCTURAL = [
+                    'nav', 'header', 'footer', 'aside',
+                    '[role="navigation"]', '[role="banner"]',
+                    '[role="complementary"]',
+                ];
+
+                // Cookie/consent banners — also checked recursively in shadow roots
+                const BANNER_SELECTORS = [
                     '[class*="cookie"]', '[class*="consent"]', '[class*="gdpr"]',
                     '[class*="onetrust"]', '[id*="onetrust"]',
                     '[class*="cookieyes"]', '[id*="cookieyes"]',
@@ -37,19 +48,26 @@ class WebScraper:
                     'cookie-consent', 'cookie-banner', 'consent-banner',
                 ];
 
-                function removeMatching(root) {
-                    SELECTORS.forEach(sel => {
+                // Strip structural elements from the regular DOM only
+                STRUCTURAL.forEach(sel => {
+                    try {
+                        document.querySelectorAll(sel).forEach(el => el.remove());
+                    } catch(e) {}
+                });
+
+                // Strip banners recursively to reach shadow roots
+                function removeBanners(root) {
+                    BANNER_SELECTORS.forEach(sel => {
                         try {
                             root.querySelectorAll(sel).forEach(el => el.remove());
                         } catch(e) {}
                     });
-                    // Recurse into shadow roots — handles OneTrust and similar
                     root.querySelectorAll('*').forEach(el => {
-                        if (el.shadowRoot) removeMatching(el.shadowRoot);
+                        if (el.shadowRoot) removeBanners(el.shadowRoot);
                     });
                 }
 
-                removeMatching(document);
+                removeBanners(document);
             }
         """)
 
@@ -75,8 +93,8 @@ class WebScraper:
                 print(f"Skipping {url}: empty page")
                 return None
 
-            # Strip cookie banners and consent dialogs before reading text
-            await self.dismiss_banners(page)
+            # Strip nav, structural elements, and cookie banners before reading text
+            await self.strip_noise(page)
 
             visible_text = await page.evaluate(
                 "() => document.body ? document.body.innerText : ''"
