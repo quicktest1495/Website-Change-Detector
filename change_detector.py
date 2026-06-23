@@ -43,30 +43,48 @@ class ChangeDetector:
         distance = a.distance(b)  # differing bits out of 64
         return 1 - (distance / 64)
 
-    def compare_snapshots(self, latest: dict, previous: dict) -> str | None:
-        """Returns a diff string if content changed meaningfully, otherwise None."""
-        sim = self.similarity(latest["visible_text"], previous["visible_text"])
-        print(f"  Similarity: {sim:.3f} (threshold: {SIMILARITY_THRESHOLD})")
-
-        if sim >= SIMILARITY_THRESHOLD:
-            return None
-
+    def compute_diff(self, latest: dict, previous: dict) -> str:
+        """Returns a unified diff of visible_text between two snapshots."""
         latest_lines = latest["visible_text"].splitlines(keepends=True)
         previous_lines = previous["visible_text"].splitlines(keepends=True)
-
         diff = difflib.unified_diff(
             previous_lines,
             latest_lines,
             fromfile="previous",
             tofile="latest",
         )
-
         return "".join(diff)
+
+    def compare_snapshots(self, latest: dict, previous: dict) -> tuple[float, str | None]:
+        """Returns (similarity_score, diff_or_none).
+
+        diff is populated if similarity is below threshold (real change),
+        and also if similarity is below 1.0 (for filtered_changes logging).
+        Always computes the diff so callers can decide what to do with it.
+        """
+        sim = self.similarity(latest["visible_text"], previous["visible_text"])
+        print(f"  Similarity: {sim:.3f} (threshold: {SIMILARITY_THRESHOLD})")
+
+        if sim == 1.0:
+            # Perfectly identical — no diff to compute
+            return sim, None
+
+        diff = self.compute_diff(latest, previous)
+        return sim, diff
 
     def save_change(self, site_id: int, diff: str):
         self.supabase.table("changes").insert({
             "site_id": site_id,
             "diff": diff,
+        }).execute()
+
+    def save_filtered_change(self, site_id: int, similarity_score: float, diff: str):
+        """Records a suppressed comparison to filtered_changes for threshold calibration."""
+        self.supabase.table("filtered_changes").insert({
+            "site_id": site_id,
+            "similarity_score": similarity_score,
+            "diff": diff,
+            "threshold_at_time": SIMILARITY_THRESHOLD,
         }).execute()
 
     def run(self):
@@ -81,10 +99,15 @@ class ChangeDetector:
                 continue
 
             latest, previous = snapshots
-            diff = self.compare_snapshots(latest, previous)
+            sim, diff = self.compare_snapshots(latest, previous)
 
-            if diff is None:
-                print(f"  No meaningful changes detected\n")
+            if sim == 1.0:
+                print(f"  Identical — no diff\n")
+            elif sim >= SIMILARITY_THRESHOLD:
+                # Filtered out — save to shadow table for calibration review
+                self.save_filtered_change(site["id"], sim, diff)
+                print(f"  Filtered (similarity {sim:.3f} >= {SIMILARITY_THRESHOLD}) — saved to filtered_changes\n")
             else:
+                # Real change
                 self.save_change(site["id"], diff)
                 print(f"  Change detected and saved\n")
