@@ -25,7 +25,7 @@ class WebScraper:
             # Try to wait for network to settle. Sites that stream live data never
             # go fully idle, so we fall back to a fixed wait if it times out.
             try:
-                await page.wait_for_load_state("networkidle", timeout=5000)
+                await page.wait_for_load_state("networkidle", timeout=10000)
             except Exception:
                 await page.wait_for_timeout(3000)
 
