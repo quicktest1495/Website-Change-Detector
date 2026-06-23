@@ -155,6 +155,11 @@ class FilteredNotificationScheduler:
             "html": html,
         })
 
+    def clear_filtered_changes(self):
+        """Clears all rows from filtered_changes after the report is sent."""
+        self.supabase.table("filtered_changes").delete().neq("id", 0).execute()
+        print("Cleared filtered_changes table")
+
     def run(self, days: int = 7):
         print(f"Fetching filtered changes from the past {days} days...")
         filtered = self.get_recent_filtered_changes(days)
@@ -166,3 +171,5 @@ class FilteredNotificationScheduler:
         html = self.format_email(filtered, site_labels)
         self.send_email(html, days)
         print(f"Filtered changes report sent to {self.notify_email}")
+
+        self.clear_filtered_changes()
