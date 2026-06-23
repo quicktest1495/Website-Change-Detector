@@ -16,6 +16,43 @@ class WebScraper:
             os.environ["SUPABASE_KEY"],
         )
 
+    async def dismiss_banners(self, page) -> None:
+        """Remove cookie banners and consent dialogs from the DOM before extracting text.
+
+        Uses a recursive approach to handle both regular DOM elements and elements
+        inside shadow roots (e.g. OneTrust, CookieYes), which querySelectorAll
+        cannot reach on its own.
+
+        Silently ignores any selector or removal errors so a stubborn banner
+        never blocks the rest of the scrape.
+        """
+        await page.evaluate("""
+            () => {
+                const SELECTORS = [
+                    '[class*="cookie"]', '[class*="consent"]', '[class*="gdpr"]',
+                    '[class*="onetrust"]', '[id*="onetrust"]',
+                    '[class*="cookieyes"]', '[id*="cookieyes"]',
+                    '[aria-label*="cookie" i]', '[aria-label*="consent" i]',
+                    '[aria-describedby*="cookie" i]',
+                    'cookie-consent', 'cookie-banner', 'consent-banner',
+                ];
+
+                function removeMatching(root) {
+                    SELECTORS.forEach(sel => {
+                        try {
+                            root.querySelectorAll(sel).forEach(el => el.remove());
+                        } catch(e) {}
+                    });
+                    // Recurse into shadow roots — handles OneTrust and similar
+                    root.querySelectorAll('*').forEach(el => {
+                        if (el.shadowRoot) removeMatching(el.shadowRoot);
+                    });
+                }
+
+                removeMatching(document);
+            }
+        """)
+
     async def scrape_url(self, browser: Browser, url: str) -> tuple[str, str, str] | None:
         """Returns (raw_html, visible_text, content_hash) or None if the page should be skipped."""
         page = await browser.new_page()
@@ -37,6 +74,9 @@ class WebScraper:
             if not raw_html or raw_html.strip() == "":
                 print(f"Skipping {url}: empty page")
                 return None
+
+            # Strip cookie banners and consent dialogs before reading text
+            await self.dismiss_banners(page)
 
             visible_text = await page.evaluate(
                 "() => document.body ? document.body.innerText : ''"
