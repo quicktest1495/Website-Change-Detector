@@ -103,7 +103,7 @@ class NotificationScheduler:
     def send_email(self, html: str):
         recipients = [email.strip() for email in self.notify_email.split(",")]
         resend.Emails.send({
-            "from": "onboarding@resend.dev",
+            "from": "sourcing@aidantrilogybot.com",
             "to": recipients,
             "subject": "Weekly Website Change Digest",
             "html": html,
