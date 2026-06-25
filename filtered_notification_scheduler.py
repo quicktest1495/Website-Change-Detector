@@ -149,7 +149,7 @@ class FilteredNotificationScheduler:
     def send_email(self, html: str, days: int):
         recipients = [email.strip() for email in self.notify_email.split(",")]
         resend.Emails.send({
-            "from": "sourcing@aidantrilogybot.com",
+            "from": "notifications@aidantrilogybot.com",
             "to": recipients,
             "subject": f"Filtered Changes Calibration Report — past {days} days",
             "html": html,
